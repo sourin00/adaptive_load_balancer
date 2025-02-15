@@ -22,6 +22,7 @@ def load_balancer():
     REQUEST_COUNT.inc()
     ACTIVE_CONNECTIONS.inc()
 
+    # TODO: Add custom algorithm here
     selected_server = backend_servers[current_server]
     current_server = (current_server + 1) % len(backend_servers)
 
