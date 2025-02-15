@@ -1,0 +1,52 @@
+version: '3.8'
+
+services:
+  backend1:
+    build: ./backend
+    container_name: backend1
+    ports:
+      - "5001:5000"
+
+  backend2:
+    build: ./backend
+    container_name: backend2
+    ports:
+      - "5002:5000"
+
+  backend3:
+    build: ./backend
+    container_name: backend3
+    ports:
+      - "5003:5000"
+
+  load-balancer:
+    build: ./load-balancer
+    container_name: load-balancer
+    ports:
+      - "5000:5000"
+    depends_on:
+      - backend1
+      - backend2
+      - backend3
+
+  prometheus:
+    image: prom/prometheus
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - load-balancer
+
+  grafana:
+    image: grafana/grafana
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
