@@ -545,9 +545,9 @@ To scale the backend:
          │ No
          ▼
 ┌─────────────────┐
-│ Contact System  │
-│ Architecture    │
-│ Team            │
+│  Try Common     |
+|  Resolution     |
+|  Strategies     │
 └─────────────────┘
 ```
 
@@ -713,18 +713,12 @@ Let me continue with the enhanced documentation for the Load Balancer POC:
 The Round Robin algorithm distributes requests sequentially across all available servers in a circular pattern:
 
 ```python
-class RoundRobinAlgorithm(BaseLoadBalancingAlgorithm):
-    def __init__(self):
-        self.current_index = 0
-        
-    def select_server(self, request, servers):
-        if not servers:
-            return None
-            
-        selected_server = servers[self.current_index]
-        self.current_index = (self.current_index + 1) % len(servers)
-        
-        return selected_server
+def handle_request_round_robin():
+    global next_server_index
+    server_info = servers[next_server_index]
+    current_server = server_info['server']
+    next_server_index = (next_server_index + 1) % len(servers)
+    return current_server
 ```
 
 #### Weighted Round Robin Algorithm
@@ -732,20 +726,21 @@ class RoundRobinAlgorithm(BaseLoadBalancingAlgorithm):
 The Weighted Round Robin algorithm extends the basic Round Robin by considering server capacity:
 
 ```python
-class WeightedRoundRobinAlgorithm(BaseLoadBalancingAlgorithm):
-    def __init__(self):
-        self.current_index = 0
-        self.current_weight = 0
-        
-    def select_server(self, request, servers):
-        if not servers:
-            return None
-            
-        # Implementation details for weighted selection
-        # Servers with higher weights receive proportionally more requests
-        # ...
-        
-        return selected_server
+def handle_request_weighted_round_robin():
+    global next_server_index
+    current_server = ""
+
+    # Weighted round robin: each server's weight determines how many times it is selected
+    total_weight = sum(server['weight'] for server in servers)
+    current_weight = 0
+    for i, server_info in enumerate(servers):
+        current_weight += server_info['weight']
+        if current_weight > total_weight * (next_server_index / len(servers)):
+            current_server = server_info['server']
+            break
+
+    next_server_index = (next_server_index + 1) % len(servers)
+    return current_server
 ```
 
 #### Least Connections Algorithm
@@ -753,15 +748,11 @@ class WeightedRoundRobinAlgorithm(BaseLoadBalancingAlgorithm):
 The Least Connections algorithm routes requests to the server with the fewest active connections:
 
 ```python
-class LeastConnectionsAlgorithm(BaseLoadBalancingAlgorithm):
-    def select_server(self, request, servers):
-        if not servers:
-            return None
-            
-        # Find server with minimum active connections
-        selected_server = min(servers, key=lambda s: s.active_connections)
-        
-        return selected_server
+def handle_request_least_connections():
+    # Find the server with the least number of connections
+    server_info = min(servers, key=lambda server: server['connections'])
+    server_info['connections'] += 1
+    return server_info['server']
 ```
 
 #### IP Hash Algorithm
@@ -769,22 +760,13 @@ class LeastConnectionsAlgorithm(BaseLoadBalancingAlgorithm):
 The IP Hash algorithm ensures session persistence by consistently routing requests from the same client IP to the same server:
 
 ```python
-class IPHashAlgorithm(BaseLoadBalancingAlgorithm):
-    def select_server(self, request, servers):
-        if not servers:
-            return None
-            
-        # Extract client IP from request
-        client_ip = request.remote_addr
-        
-        # Generate hash from client IP
-        hash_value = hash(client_ip)
-        
-        # Select server based on hash value
-        index = hash_value % len(servers)
-        selected_server = servers[index]
-        
-        return selected_server
+def handle_request_ip_hash():
+    # Get the client's IP address
+    client_ip = request.remote_addr
+    # Hash the IP and use modulo to choose a backend server
+    hashed_ip = int(hashlib.md5(client_ip.encode('utf-8')).hexdigest(), 16)
+    server_index = hashed_ip % len(servers)
+    return servers[server_index]['server']
 ```
 
 ## Deployment Configuration
