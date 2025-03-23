@@ -1,4 +1,4 @@
-# Load Balancer POC: Technical Documentation
+# Adaptive Load Balancer: Technical Documentation
 
 ## Executive Summary
 
