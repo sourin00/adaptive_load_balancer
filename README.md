@@ -909,17 +909,17 @@ scrape_configs:
 │                    Load Testing Architecture                    │
 │                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐ │
-│  │ Locust Master           │        │ Locust Worker 1        │ │
+│  │ Locust Master           │        │ Locust Worker 1         │ │
 │  │                         │        │                         │ │
 │  │ - Test configuration    │───────▶│ - Generate load        │ │
-│  │ - Results aggregation   │        │ - Report metrics       │ │
+│  │ - Results aggregation   │        │ - Report metrics        │ │
 │  └─────────────────────────┘        └─────────────────────────┘ │
 │              │                                                  │
 │              │                       ┌─────────────────────────┐ │
-│              └──────────────────────▶│ Locust Worker 2        │ │
+│              └──────────────────────▶│ Locust Worker 2         │ │
 │                                      │                         │ │
-│                                      │ - Generate load        │ │
-│                                      │ - Report metrics       │ │
+│                                      │ - Generate load         │ │
+│                                      │ - Report metrics        │ │
 │                                      └─────────────────────────┘ │
 │                                                                 │
 │  ┌─────────────────────────┐        ┌─────────────────────────┐ │
