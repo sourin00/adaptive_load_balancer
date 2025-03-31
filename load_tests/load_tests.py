@@ -26,3 +26,7 @@ class LoadBalancerUser(HttpUser):
     def test_ip_hash(self):
         algo = 'ip_hash'
         self.client.get(f'/?algo={algo}')
+
+    @task(1)
+    def test_adaptive(self):
+        self.client.get(f'/')
