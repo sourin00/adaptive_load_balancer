@@ -119,6 +119,15 @@ services:
       - monitoring
     restart: always
 
+  redis:
+    image: redis:7
+    container_name: redis
+    ports:
+      - "6379:6379"
+    networks:
+      - monitoring
+
+
 networks:
   monitoring:
     driver: bridge

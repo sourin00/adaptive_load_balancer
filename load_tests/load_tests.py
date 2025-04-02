@@ -28,5 +28,10 @@ class LoadBalancerUser(HttpUser):
         self.client.get(f'/?algo={algo}')
 
     @task(1)
+    def test_power_of_two(self):
+        algo = 'power_of_two'
+        self.client.get(f'/?algo={algo}')
+
+    @task(1)
     def test_adaptive(self):
         self.client.get(f'/')

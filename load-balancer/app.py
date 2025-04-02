@@ -1,162 +1,175 @@
 import hashlib
+import random
+import threading
 import time
 
+import redis
 import requests
 from flask import Flask, request
+from prometheus_api_client import PrometheusConnect
 from prometheus_client import start_http_server, Counter, Histogram, generate_latest
 
 app = Flask(__name__)
 
-# Metrics for Prometheus
-REQUEST_COUNT = Counter('load_balancer_requests_total', 'Total number of requests handled by the load balancer')
-RESPONSE_TIME = Histogram('load_balancer_response_duration_seconds', 'Histogram of response durations by algorithm', ['algo'])
-ALGO_REQUEST_COUNT = Counter('load_balancer_algo_requests_total', 'Total number of requests per algorithm', ['algo'])
+# Redis setup
+redis_client = redis.StrictRedis(host='redis', port=6379, decode_responses=True)
 
-# List of backend servers with default values for resource usage
+# Prometheus setup
+prom = PrometheusConnect(url="http://prometheus:9090", disable_ssl=True)
+
+# Prometheus metrics
+REQUEST_COUNT = Counter('load_balancer_requests_total', 'Total requests')
+RESPONSE_TIME = Histogram('load_balancer_response_duration_seconds', 'Response durations', ['algo'])
+ALGO_REQUEST_COUNT = Counter('load_balancer_algo_requests_total', 'Requests per algorithm', ['algo'])
+
+# Server pool
 servers = [
-    {'server': "http://backend1:5000", 'weight': 2, 'connections': 0, 'response_time': 0.05, 'cpu_usage': 10, 'mem_usage': 20, 'net_usage': 30},
-    {'server': "http://backend2:5000", 'weight': 3, 'connections': 0, 'response_time': 0.04, 'cpu_usage': 15, 'mem_usage': 25, 'net_usage': 35},
-    {'server': "http://backend3:5000", 'weight': 1, 'connections': 0, 'response_time': 0.06, 'cpu_usage': 20, 'mem_usage': 30, 'net_usage': 40}
+    {'name': 'backend1', 'url': "http://backend1:5000", 'weight': 2, 'connections': 0, 'response_time': 0.05},
+    {'name': 'backend2', 'url': "http://backend2:5000", 'weight': 3, 'connections': 0, 'response_time': 0.04},
+    {'name': 'backend3', 'url': "http://backend3:5000", 'weight': 1, 'connections': 0, 'response_time': 0.06}
 ]
 
-# Track the last used algorithm
-last_used_algo = None
 
 @app.route('/')
 def load_balancer():
-    global last_used_algo, next_server_index
-
-    # Start the timer for response time tracking
     start_time = time.time()
-
     REQUEST_COUNT.inc()
 
     algo = request.args.get('algo')
     if not algo:
-        # Intelligent algorithm selection
         algo = select_best_algorithm()
 
-    # Check if we need to reset the next_server_index
+    last_used_algo = redis_client.get("last_used_algo")
     if algo in ['round_robin', 'weighted_round_robin'] and last_used_algo not in ['round_robin', 'weighted_round_robin']:
-        next_server_index = 0  # Reset the round-robin index to 0
+        redis_client.set("next_server_index", 0)
 
-    # Select load balancing algorithm based on the query parameter
+    redis_client.set("last_used_algo", algo)
+    selected_server_info = None
+
     if algo == 'least_connections':
-        selected_server = handle_request_least_connections()
+        selected_server_info = min(servers, key=lambda s: s['connections'])
+        selected_server_info['connections'] += 1
     elif algo == 'ip_hash':
-        selected_server = handle_request_ip_hash()
+        selected_server_info = servers[hash_ip(request.remote_addr) % len(servers)]
     elif algo == 'round_robin':
-        selected_server = handle_request_round_robin()
+        selected_server_info = get_server_round_robin()
     elif algo == 'weighted_round_robin':
-        selected_server = handle_request_weighted_round_robin()
+        selected_server_info = smooth_weighted_round_robin()
+    elif algo == 'power_of_two':
+        selected_server_info = power_of_two_choice()
+        selected_server_info['connections'] += 1
+    elif algo == 'least_response_time':
+        selected_server_info = min(servers, key=lambda s: s['response_time'])
+    elif algo == 'geo_aware':
+        selected_server_info = geo_aware_routing(request.remote_addr)
     else:
         return {'error': 'Invalid algorithm specified'}, 400
 
-    # Increment algorithm-specific counter
     ALGO_REQUEST_COUNT.labels(algo=algo).inc()
 
-    # Update the last used algorithm
-    last_used_algo = algo
-
     try:
-        # Simulate request to the backend
-        response = requests.get(f"{selected_server}{request.path}?algo={algo}")
+        response = requests.get(f"{selected_server_info['url']}?algo={algo}")
         return response.content, response.status_code
-    except requests.exceptions.RequestException as e:
+    except Exception as e:
         return str(e), 500
     finally:
-        # Measure the response duration
-        response_duration = time.time() - start_time
-        RESPONSE_TIME.labels(algo=algo).observe(response_duration)
+        if algo in ['least_connections', 'power_of_two']:
+            selected_server_info['connections'] -= 1
+        selected_server_info['response_time'] = time.time() - start_time
+        RESPONSE_TIME.labels(algo=algo).observe(selected_server_info['response_time'])
 
-
-# Round-robin implementation
-next_server_index = 0
-
-def handle_request_round_robin():
-    global next_server_index
-    server_info = servers[next_server_index]
-    current_server = server_info['server']
-    next_server_index = (next_server_index + 1) % len(servers)
-    return current_server
-
-def handle_request_weighted_round_robin():
-    global next_server_index
-    current_server = ""
-
-    # Weighted round robin: each server's weight determines how many times it is selected
-    total_weight = sum(server['weight'] for server in servers)
-    current_weight = 0
-    for i, server_info in enumerate(servers):
-        current_weight += server_info['weight']
-        if current_weight > total_weight * (next_server_index / len(servers)):
-            current_server = server_info['server']
-            break
-
-    next_server_index = (next_server_index + 1) % len(servers)
-    return current_server
-
-def handle_request_least_connections():
-    # Find the server with the least number of connections
-    server_info = min(servers, key=lambda server: server['connections'])
-    server_info['connections'] += 1
-    return server_info['server']
-
-def handle_request_ip_hash():
-    # Get the client's IP address
-    client_ip = request.remote_addr
-    # Hash the IP and use modulo to choose a backend server
-    hashed_ip = int(hashlib.md5(client_ip.encode('utf-8')).hexdigest(), 16)
-    server_index = hashed_ip % len(servers)
-    return servers[server_index]['server']
 
 @app.route('/metrics')
 def metrics():
-    # Expose Prometheus metrics
     return generate_latest()
 
 
-# Calculate dynamic weight based on server performance
-def calculate_dynamic_weight(server):
-    # Server performance (CPU, memory, network utilization) is factored in the weight
-    performance_factor = (server['cpu_usage'] + server['mem_usage'] + server['net_usage']) / 3
-    dynamic_weight = server['weight'] / performance_factor
-    return dynamic_weight
+# Redis-based round-robin
+def get_server_round_robin():
+    try:
+        index = int(redis_client.incr("next_server_index")) % len(servers)
+    except Exception:
+        index = 0
+        redis_client.set("next_server_index", 1)
+    return servers[index]
 
-# Calculate the composite load (CTL) of the server
-def calculate_composite_load(server):
-    # Composite load is a combination of response time and connections
-    response_time_factor = server['response_time']
-    connection_factor = server['connections']
-    composite_load = 0.7 * response_time_factor + 0.3 * connection_factor
-    return composite_load
 
-# Calculate server's final weight based on dynamic load and performance
+# Weighted round robin (smooth)
+def smooth_weighted_round_robin():
+    total_weight = sum(s['weight'] for s in servers)
+    for s in servers:
+        s.setdefault('current_weight', 0)
+        s['current_weight'] += s['weight']
+    selected = max(servers, key=lambda s: s['current_weight'])
+    selected['current_weight'] -= total_weight
+    return selected
+
+
+def power_of_two_choice():
+    candidates = random.sample(servers, 2)
+    return min(candidates, key=lambda s: s['connections'])
+
+
+def hash_ip(ip):
+    return int(hashlib.md5(ip.encode()).hexdigest(), 16)
+
+
+def geo_aware_routing(ip):
+    # Placeholder: In production, use MaxMind GeoIP or similar
+    # Example: send APAC IPs to backend1, EU to backend2, others to backend3
+    hash_val = hash_ip(ip)
+    if hash_val % 3 == 0:
+        return servers[0]
+    elif hash_val % 3 == 1:
+        return servers[1]
+    return servers[2]
+
+
+# --- Metric Polling ---
+
+def get_prometheus_metric(query):
+    try:
+        result = prom.custom_query(query)
+        if result and 'value' in result[0]:
+            return float(result[0]['value'][1])
+    except Exception:
+        pass
+    return 0.0
+
+
+def background_metrics_updater(interval=10):
+    while True:
+        try:
+            for s in servers:
+                cpu = get_prometheus_metric(f'rate(container_cpu_usage_seconds_total{{container="{s["name"]}"}}[1m])')
+                mem = get_prometheus_metric(f'container_memory_usage_bytes{{container="{s["name"]}"}}')
+                s['cpu'] = cpu
+                s['mem'] = mem
+        except Exception as e:
+            print("Error updating metrics:", e)
+        time.sleep(interval)
+
+
 def calculate_server_weight(server):
-    dynamic_weight = calculate_dynamic_weight(server)
-    composite_load = calculate_composite_load(server)
-    final_weight = dynamic_weight / composite_load
-    return final_weight
+    cpu = server.get('cpu', 1)
+    mem = server.get('mem', 1)
+    load = server.get('connections', 1)
+    return server['weight'] / (0.6 * cpu + 0.2 * mem + 0.2 * load + 1e-5)
 
 
-# Intelligent algorithm selection based on load and performance
 def select_best_algorithm():
-    # Calculate composite load for each server
-    server_weights = [(server, calculate_server_weight(server)) for server in servers]
-    server_weights.sort(key=lambda x: x[1])  # Sort by calculated server weight
+    weighted = [(s, calculate_server_weight(s)) for s in servers]
+    weighted.sort(key=lambda x: x[1], reverse=True)
 
-    # If server is highly loaded (high response time or many connections), use least_connections
-    if server_weights[0][1] > 1.5:  # Example threshold: you can adjust this
-        return 'least_connections'
-
-    # If server has a balanced load, use weighted round robin or round robin
-    if server_weights[0][1] < 0.7:
+    if weighted[0][1] < 0.7:
         return 'weighted_round_robin'
+    elif weighted[0][1] > 2.0:
+        return 'least_connections'
+    else:
+        return 'power_of_two'
 
-    # Fallback to round robin if the load is relatively balanced
-    return 'round_robin'
 
 if __name__ == "__main__":
-    # Start the Prometheus client HTTP server
-    start_http_server(8000)  # Prometheus metrics server on port 8000
+    threading.Thread(target=background_metrics_updater, daemon=True).start()
+    start_http_server(8000)
     app.run(host='0.0.0.0', port=5000)
