@@ -10,6 +10,9 @@ from flask import Flask, request
 from prometheus_api_client import PrometheusConnect
 from prometheus_client import start_http_server, Counter, Histogram, generate_latest
 
+import geoip2.database
+import os
+
 import pprint
 pp = pprint.PrettyPrinter(indent=2)
 
@@ -119,14 +122,24 @@ def hash_ip(ip):
 
 
 def geo_aware_routing(ip):
-    # Placeholder: In production, use MaxMind GeoIP or similar
-    # Example: send APAC IPs to backend1, EU to backend2, others to backend3
-    hash_val = hash_ip(ip)
-    if hash_val % 3 == 0:
-        return servers[0]
-    elif hash_val % 3 == 1:
-        return servers[1]
-    return servers[2]
+    try:
+        db_path = os.path.join(os.path.dirname(__file__), "GeoLite2-Country.mmdb")
+        reader = geoip2.database.Reader(db_path)
+        response = reader.country(ip)
+        country_code = response.country.iso_code
+
+        eu_countries = {"FR", "DE", "IT", "ES", "NL", "BE", "PL", "SE", "FI", "IE", "DK", "PT", "AT"}
+        apac_countries = {"IN", "CN", "JP", "KR", "AU", "SG", "TH", "VN", "MY", "PH", "ID"}
+
+        if country_code in apac_countries:
+            return servers[0]  # backend1
+        elif country_code in eu_countries:
+            return servers[1]  # backend2
+        else:
+            return servers[2]  # backend3
+    except Exception as e:
+        print(f"GeoIP lookup failed for {ip}: {e}")
+        return servers[2]  # fallback
 
 
 # --- Metric Polling ---
