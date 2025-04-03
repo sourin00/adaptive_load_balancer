@@ -4,15 +4,19 @@ import threading
 import time
 
 import redis
+import docker
 import requests
 from flask import Flask, request
 from prometheus_api_client import PrometheusConnect
 from prometheus_client import start_http_server, Counter, Histogram, generate_latest
 
+import pprint
+pp = pprint.PrettyPrinter(indent=2)
+
 app = Flask(__name__)
 
 # Redis setup
-redis_client = redis.StrictRedis(host='redis', port=6379, decode_responses=True)
+redis_client = redis.Redis(host='redis', port=6379, decode_responses=True)
 
 # Prometheus setup
 prom = PrometheusConnect(url="http://prometheus:9090", disable_ssl=True)
@@ -127,26 +131,41 @@ def geo_aware_routing(ip):
 
 # --- Metric Polling ---
 
-def get_prometheus_metric(query):
+def calculate_cpu_percent(stats):
     try:
-        result = prom.custom_query(query)
-        if result and 'value' in result[0]:
-            return float(result[0]['value'][1])
-    except Exception:
-        pass
+        cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
+        system_delta = stats['cpu_stats']['system_cpu_usage'] - stats['precpu_stats']['system_cpu_usage']
+        cpu_count = len(stats['cpu_stats']['cpu_usage'].get('percpu_usage', [])) or 1
+        if system_delta > 0 and cpu_delta > 0:
+            return (cpu_delta / system_delta) * cpu_count * 100.0
+    except Exception as e:
+        print("❌ Error calculating CPU:", e)
     return 0.0
 
-
 def background_metrics_updater(interval=10):
+    client = docker.from_env()
     while True:
         try:
             for s in servers:
-                cpu = get_prometheus_metric(f'rate(container_cpu_usage_seconds_total{{container="{s["name"]}"}}[1m])')
-                mem = get_prometheus_metric(f'container_memory_usage_bytes{{container="{s["name"]}"}}')
-                s['cpu'] = cpu
-                s['mem'] = mem
+                try:
+                    container = client.containers.get(s['name'])
+                    pp.pprint("Container ID: "+container.id)
+                    stats = container.stats(stream=False)
+
+                    cpu = calculate_cpu_percent(stats)
+                    mem = stats['memory_stats']['usage']
+
+                    s['cpu'] = round(cpu, 2)
+                    s['mem'] = mem
+                except Exception as e:
+                    print(f"❌ Error getting stats for {s['name']}: {e}")
+
+            print("🔄 Updated Server Metrics:")
+            pp.pprint(servers)
+
         except Exception as e:
-            print("Error updating metrics:", e)
+            print("❌ Top-level updater error:", e)
+
         time.sleep(interval)
 
 
