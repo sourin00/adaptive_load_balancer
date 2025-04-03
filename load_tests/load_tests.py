@@ -33,5 +33,10 @@ class LoadBalancerUser(HttpUser):
         self.client.get(f'/?algo={algo}')
 
     @task(1)
+    def test_geo_aware(self):
+        algo = 'geo_aware'
+        self.client.get(f'/?algo={algo}')
+
+    @task(1)
     def test_adaptive(self):
         self.client.get(f'/')
