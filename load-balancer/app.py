@@ -144,6 +144,25 @@ def geo_aware_routing(ip):
 
 # --- Metric Polling ---
 
+def update_server_metrics_using_api():
+    """Fetch the real-time metrics for each server by calling the /metrics API endpoint."""
+    for server_info in servers:
+        try:
+            # Query the /metrics API on each backend server to get the latest metrics
+            response = requests.get(f"{server_info['server']}/metrics")
+            metrics_obj = response.json()
+
+            # Update server dictionary with real-time values
+            server_info.update({
+                'cpu': metrics_obj['cpu_usage'],
+                'mem': metrics_obj['memory_usage'],
+                'net_usage': metrics_obj['net_usage'],
+                'response_time': metrics_obj['response_time'],
+                'connections': metrics_obj['active_connections']
+            })
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching metrics for {server_info['server']}: {e}")
+
 def calculate_cpu_percent(stats):
     try:
         cpu_delta = stats['cpu_stats']['cpu_usage']['total_usage'] - stats['precpu_stats']['cpu_usage']['total_usage']
