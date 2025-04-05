@@ -125,6 +125,9 @@ def geo_aware_routing(ip):
     try:
         db_path = os.path.join(os.path.dirname(__file__), "GeoLite2-Country.mmdb")
         reader = geoip2.database.Reader(db_path)
+        # For dev/testing, override with a test IP:
+        if ip.startswith("172.") or ip == "127.0.0.1":
+            ip = "8.8.8.8"  # Example: US IP
         response = reader.country(ip)
         country_code = response.country.iso_code
 
@@ -149,7 +152,7 @@ def update_server_metrics_using_api():
     for server_info in servers:
         try:
             # Query the /metrics API on each backend server to get the latest metrics
-            response = requests.get(f"{server_info['server']}/metrics")
+            response = requests.get(f"{server_info['url']}/metrics")
             metrics_obj = response.json()
 
             # Update server dictionary with real-time values
@@ -162,6 +165,8 @@ def update_server_metrics_using_api():
             })
         except requests.exceptions.RequestException as e:
             print(f"Error fetching metrics for {server_info['server']}: {e}")
+    print("🔄 Updated Server Metrics using api:")
+    pp.pprint(servers)
 
 def calculate_cpu_percent(stats):
     try:
@@ -174,39 +179,40 @@ def calculate_cpu_percent(stats):
         print("❌ Error calculating CPU:", e)
     return 0.0
 
-def background_metrics_updater(interval=10):
+def update_server_metrics_using_docker_sdk():
     client = docker.from_env()
+    try:
+        for s in servers:
+            try:
+                container = client.containers.get(s['name'])
+                pp.pprint("Container ID: " + container.id)
+                stats = container.stats(stream=False)
+
+                cpu = calculate_cpu_percent(stats)
+                mem = stats['memory_stats']['usage']
+
+                s['cpu'] = round(cpu, 2)
+                s['mem'] = mem
+            except Exception as e:
+                print(f"❌ Error getting stats for {s['name']}: {e}")
+
+        print("🔄 Updated Server Metrics using docker SDK:")
+        pp.pprint(servers)
+
+    except Exception as e:
+        print("❌ Top-level updater error:", e)
+
+
+def background_metrics_updater(interval=5):
     while True:
-        try:
-            for s in servers:
-                try:
-                    container = client.containers.get(s['name'])
-                    pp.pprint("Container ID: "+container.id)
-                    stats = container.stats(stream=False)
-
-                    cpu = calculate_cpu_percent(stats)
-                    mem = stats['memory_stats']['usage']
-
-                    s['cpu'] = round(cpu, 2)
-                    s['mem'] = mem
-                except Exception as e:
-                    print(f"❌ Error getting stats for {s['name']}: {e}")
-
-            print("🔄 Updated Server Metrics:")
-            pp.pprint(servers)
-
-        except Exception as e:
-            print("❌ Top-level updater error:", e)
-
+        update_server_metrics_using_api()
         time.sleep(interval)
-
 
 def calculate_server_weight(server):
     cpu = server.get('cpu', 1)
     mem = server.get('mem', 1)
     load = server.get('connections', 1)
     return server['weight'] / (0.6 * cpu + 0.2 * mem + 0.2 * load + 1e-5)
-
 
 def select_best_algorithm():
     weighted = [(s, calculate_server_weight(s)) for s in servers]
@@ -218,7 +224,6 @@ def select_best_algorithm():
         return 'least_connections'
     else:
         return 'power_of_two'
-
 
 if __name__ == "__main__":
     threading.Thread(target=background_metrics_updater, daemon=True).start()
