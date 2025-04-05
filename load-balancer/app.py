@@ -33,9 +33,9 @@ ALGO_REQUEST_COUNT = Counter('load_balancer_algo_requests_total', 'Requests per 
 
 # Server pool
 servers = [
-    {'name': 'backend1', 'url': "http://backend1:5000", 'weight': 2, 'connections': 0, 'response_time': 0.05},
-    {'name': 'backend2', 'url': "http://backend2:5000", 'weight': 3, 'connections': 0, 'response_time': 0.04},
-    {'name': 'backend3', 'url': "http://backend3:5000", 'weight': 1, 'connections': 0, 'response_time': 0.06}
+    {'name': 'backend1', 'url': "http://34.142.176.64", 'weight': 2, 'connections': 0, 'response_time': 0.05},
+    {'name': 'backend2', 'url': "http://34.140.174.234", 'weight': 3, 'connections': 0, 'response_time': 0.04},
+    {'name': 'backend3', 'url': "http://34.173.210.96", 'weight': 1, 'connections': 0, 'response_time': 0.06}
 ]
 
 executor = ThreadPoolExecutor(max_workers=50)  # Configurable pool
@@ -54,7 +54,8 @@ def load_balancer():
         if redis_client.get("last_used_algo") not in ['round_robin', 'weighted_round_robin']:
             redis_client.set("next_server_index", 0)
 
-    selected_server_info = select_server(algo, request.remote_addr)
+    client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
+    selected_server_info = select_server(algo, client_ip)
     if not selected_server_info:
         return {'error': 'No backend available'}, 503
 
@@ -117,10 +118,13 @@ def hash_ip(ip):
 def geo_aware_routing(ip):
     try:
         db_path = os.path.join(os.path.dirname(__file__), "GeoLite2-Country.mmdb")
+        print("GeoLite2-Country.mmdb path collected")
         reader = geoip2.database.Reader(db_path)
+        print("GeoIP DB loaded....")
         # For dev/testing, override with a test IP:
         if ip.startswith("172.") or ip == "127.0.0.1":
             ip = "8.8.8.8"  # Example: US IP
+        print("detecting country from ip address: ", ip)
         response = reader.country(ip)
         country_code = response.country.iso_code
 
