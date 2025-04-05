@@ -46,7 +46,7 @@ def load_balancer():
     start_time = time.time()
     REQUEST_COUNT.inc()
 
-    algo = request.args.get('algo') or select_best_algorithm()
+    algo = request.args.get('algo')
     redis_client.set("last_used_algo", algo)
 
     # Reset index for round-robin family if algo changes
@@ -252,41 +252,28 @@ def calculate_server_score(server, weights=None):
 def select_best_algorithm():
 
     # Check Redis for a recent cached decision
-    last_decision = redis_client.get("cached_algo")
+    last_decision = redis_client.get("cached_best_server_index")
     if last_decision:
-        return last_decision
+        return servers[int(last_decision)]
 
-    # Compute score for each server
-    scored = []
+    best_score = -1
+    best_server = None
+
     for s in servers:
         score = calculate_server_score(s)
-        s['score'] = score
-        scored.append((s['name'], score))
+        if score > best_score:
+            best_score = score
+            best_server = s
 
-    # Log scores for debugging
-    pp.pprint({"💡 Server Scores": scored})
-
-    # Sort servers by score descending
-    scored.sort(key=lambda x: x[1], reverse=True)
-    best_score = scored[0][1]
-
-    # Decision logic based on score threshold
-    if best_score >= 0.8:
-        selected_algo = 'least_connections'  # Most healthy – optimize concurrency
-    elif best_score >= 0.6:
-        selected_algo = 'power_of_two'  # Balanced – avoid hotspots
-    elif best_score >= 0.4:
-        selected_algo = 'weighted_round_robin'  # Slightly stressed – bias based on capacity
-    else:
-        selected_algo = 'round_robin'  # Fall back when all under pressure
-
-    redis_client.setex("cached_algo", 5, selected_algo)  # Cache for 5 seconds
-    return selected_algo
+    redis_client.setex("cached_best_server_index", 5, servers.index(best_server))  # Cache for 5 seconds
+    return best_server
 
 
 def select_server(algo, client_ip):
     try:
-        if algo == 'least_connections':
+        if algo == 'adaptive':
+            return select_best_algorithm()
+        elif algo == 'least_connections':
             return min(servers, key=lambda s: s['connections'])
         elif algo == 'ip_hash':
             return servers[hash_ip(client_ip) % len(servers)]

@@ -5,7 +5,7 @@ class LoadBalancerUser(HttpUser):
     wait_time = between(1, 3)  # Simulate user think time between requests (1 to 3 seconds)
 
     # List of load balancing algorithms to test
-    algorithms = ['least_connections', 'ip_hash', 'round_robin', 'weighted_round_robin']
+    algorithms = ['least_connections', 'ip_hash', 'round_robin', 'weighted_round_robin', 'power_of_two', 'geo_aware', 'adaptive']
 
     @task(1)  # Equal weight for all algorithms, so each runs equally
     def test_round_robin(self):
@@ -39,4 +39,5 @@ class LoadBalancerUser(HttpUser):
 
     @task(1)
     def test_adaptive(self):
-        self.client.get(f'/')
+        algo = 'adaptive'
+        self.client.get(f'/?algo={algo}')

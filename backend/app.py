@@ -33,6 +33,17 @@ def metrics():
         'response_time': 0.05  # Dummy response time for simulation (can be dynamically calculated)
     })
 
+@app.route('/health')
+def health():
+    try:
+        if psutil.cpu_percent() > 95 or psutil.virtual_memory().percent > 90:
+            return jsonify({'status': 'unhealthy'}), 503
+        else:
+            return jsonify({'status': 'healthy'}), 200
+    except Exception as e:
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
+
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000)
