@@ -13,7 +13,8 @@ def hello():
     return {
         'message': 'API is running',
         'serverName': server_name,
-        'algo': algo
+        'algo': algo,
+        'region': 'Hello from Rest of the World'
     }
 
 
