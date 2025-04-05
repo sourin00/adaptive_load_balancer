@@ -249,7 +249,7 @@ def calculate_server_score(server, weights=None):
     return round(score, 3)
 
 
-def select_best_algorithm():
+def select_best_server():
 
     # Check Redis for a recent cached decision
     last_decision = redis_client.get("cached_best_server_index")
@@ -272,7 +272,7 @@ def select_best_algorithm():
 def select_server(algo, client_ip):
     try:
         if algo == 'adaptive':
-            return select_best_algorithm()
+            return select_best_server()
         elif algo == 'least_connections':
             return min(servers, key=lambda s: s['connections'])
         elif algo == 'ip_hash':
