@@ -1,6 +1,6 @@
 services:
   backend1:
-    build: ./backend
+    build: ./backend1
     container_name: backend1
     ports:
       - "5001:5000"
@@ -8,7 +8,7 @@ services:
       - monitoring
 
   backend2:
-    build: ./backend
+    build: ./backend2
     container_name: backend2
     ports:
       - "5002:5000"
@@ -16,10 +16,34 @@ services:
       - monitoring
 
   backend3:
-    build: ./backend
+    build: ./backend3
     container_name: backend3
     ports:
       - "5003:5000"
+    networks:
+      - monitoring
+
+  backend4:
+    build: ./backend4
+    container_name: backend4
+    ports:
+      - "5004:5000"
+    networks:
+      - monitoring
+
+  backend5:
+    build: ./backend5
+    container_name: backend5
+    ports:
+      - "5005:5000"
+    networks:
+      - monitoring
+
+  backend6:
+    build: ./backend6
+    container_name: backend6
+    ports:
+      - "5006:5000"
     networks:
       - monitoring
 

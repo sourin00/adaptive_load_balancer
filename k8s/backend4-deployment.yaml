@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend4
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend4
+  template:
+    metadata:
+      labels:
+        app: backend4
+    spec:
+      containers:
+        - name: backend4
+          image: us-central1-docker.pkg.dev/adaptive-load-balancer-1/backend-services/backend4:latest
+          ports:
+            - containerPort: 5000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend4-service
+spec:
+  type: LoadBalancer
+  selector:
+    app: backend4
+  ports:
+    - port: 80
+      targetPort: 5000
