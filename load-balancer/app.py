@@ -33,9 +33,18 @@ ALGO_REQUEST_COUNT = Counter('load_balancer_algo_requests_total', 'Requests per 
 
 # Server pool
 servers = [
-    {'name': 'backend1', 'url': "http://34.142.176.64", 'weight': 2, 'connections': 0, 'response_time': 0.05},
-    {'name': 'backend2', 'url': "http://34.140.174.234", 'weight': 3, 'connections': 0, 'response_time': 0.04},
-    {'name': 'backend3', 'url': "http://34.173.210.96", 'weight': 1, 'connections': 0, 'response_time': 0.06}
+    {'name': 'backend1', 'url': "http://34.142.176.64", 'weight': 2, 'connections': 0, 'response_time': 0.05,
+     'region': 'APAC'},
+    {'name': 'backend2', 'url': "http://34.140.174.234", 'weight': 3, 'connections': 0, 'response_time': 0.04,
+     'region': 'EU'},
+    {'name': 'backend3', 'url': "http://34.173.210.96", 'weight': 1, 'connections': 0, 'response_time': 0.06,
+     'region': 'US'},
+    {'name': 'backend4', 'url': "http://35.198.195.167", 'weight': 3, 'connections': 0, 'response_time': 0.02,
+     'region': 'APAC'},
+    {'name': 'backend5', 'url': "http://34.140.55.130", 'weight': 4, 'connections': 0, 'response_time': 0.01,
+     'region': 'EU'},
+    {'name': 'backend6', 'url': "http://34.123.160.24", 'weight': 2, 'connections': 0, 'response_time': 0.04,
+     'region': 'US'}
 ]
 
 executor = ThreadPoolExecutor(max_workers=50)  # Configurable pool
@@ -50,10 +59,12 @@ def load_balancer():
     redis_client.set("last_used_algo", algo)
 
     # Reset index for round-robin family if algo changes
-    if algo in ['round_robin', 'weighted_round_robin']:
-        if redis_client.get("last_used_algo") not in ['round_robin', 'weighted_round_robin']:
-            redis_client.set("next_server_index", 0)
+    prev_algo = redis_client.get("last_used_algo")
+    redis_client.set("last_used_algo", algo)
+    if algo in ['round_robin', 'weighted_round_robin'] and prev_algo not in ['round_robin', 'weighted_round_robin']:
+        redis_client.set("next_server_index", 0)
 
+    print("Printing X-Forwaded-For header: ", request.headers.get('X-Forwarded-For', request.remote_addr))
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr).split(',')[0].strip()
     selected_server_info = select_server(algo, client_ip)
     if not selected_server_info:
@@ -66,8 +77,8 @@ def load_balancer():
         selected_server_info['connections'] += 1
 
     try:
-        future = executor.submit(requests.get, f"{selected_server_info['url']}?algo={algo}", timeout=2.5)
-        response = future.result(timeout=3.0)  # max wait time
+        future = executor.submit(requests.get, f"{selected_server_info['url']}?algo={algo}", timeout=3)
+        response = future.result(timeout=10)  # max wait time
         return response.content, response.status_code
     except FuturesTimeout:
         return {'error': 'Backend timeout'}, 504
@@ -99,6 +110,8 @@ def get_server_round_robin():
 def smooth_weighted_round_robin():
     total_weight = sum(s.get('effective_weight', s['weight']) for s in servers)
     for s in servers:
+        if 'current_weight' not in s:
+            s['current_weight'] = 0
         s.setdefault('current_weight', 0)
         s['current_weight'] += s.get('effective_weight', s['weight'])
     selected = max(servers, key=lambda s: s['current_weight'])
@@ -132,14 +145,18 @@ def geo_aware_routing(ip):
         apac_countries = {"IN", "CN", "JP", "KR", "AU", "SG", "TH", "VN", "MY", "PH", "ID"}
 
         if country_code in apac_countries:
-            return servers[0]  # backend1
+            apac_servers = [server for server in servers if server['region'] == 'APAC']  # backend1, backend4
+            return apac_servers
         elif country_code in eu_countries:
-            return servers[1]  # backend2
+            eu_servers = [server for server in servers if server['region'] == 'EU']  # backend2, backend5
+            return eu_servers
         else:
-            return servers[2]  # backend3
+            us_servers = [server for server in servers if server['region'] == 'US']  # backend3, backend6
+            return us_servers
     except Exception as e:
         print(f"GeoIP lookup failed for {ip}: {e}")
-        return servers[2]  # fallback
+        us_servers = [server for server in servers if server['region'] == 'US']  # fallback
+        return us_servers
 
 
 # --- Metric Polling ---
@@ -174,7 +191,7 @@ def update_server_metrics_using_api():
                 'connections': metrics_obj['active_connections']
             })
 
-            #Update dynamic weight
+            # Update dynamic weight
             update_server_effective_weight(server_info)
         except requests.exceptions.RequestException as e:
             print(f"Error fetching metrics for {server_info['server']}: {e}")
@@ -253,17 +270,21 @@ def calculate_server_score(server, weights=None):
     return round(score, 3)
 
 
-def select_best_server():
+def select_best_server(ip):
+    geo_aware_servers = geo_aware_routing(ip)
+    geo_aware_servers = [s for s in geo_aware_servers if s.get('healthy', True)]
 
-    # Check Redis for a recent cached decision
+    # Check Redis for a recent cached decision. If recent server suits current user's region use it else
     last_decision = redis_client.get("cached_best_server_index")
     if last_decision:
-        return servers[int(last_decision)]
+        last_best_server = servers[int(last_decision)]
+        if last_best_server in geo_aware_servers:
+            return last_best_server
 
     best_score = -1
     best_server = None
 
-    for s in servers:
+    for s in geo_aware_servers:
         score = calculate_server_score(s)
         if score > best_score:
             best_score = score
@@ -276,7 +297,7 @@ def select_best_server():
 def select_server(algo, client_ip):
     try:
         if algo == 'adaptive':
-            return select_best_server()
+            return select_best_server(client_ip)
         elif algo == 'least_connections':
             return min(servers, key=lambda s: s['connections'])
         elif algo == 'ip_hash':
@@ -287,10 +308,6 @@ def select_server(algo, client_ip):
             return smooth_weighted_round_robin()
         elif algo == 'power_of_two':
             return power_of_two_choice()
-        elif algo == 'least_response_time':
-            return min(servers, key=lambda s: s['response_time'])
-        elif algo == 'geo_aware':
-            return geo_aware_routing(client_ip)
     except Exception as e:
         print(f"❌ Error selecting server using {algo}: {e}")
         return None
@@ -305,7 +322,6 @@ def health_check_loop(interval=10):
             except:
                 s['healthy'] = False
         time.sleep(interval)
-
 
 if __name__ == "__main__":
     threading.Thread(target=background_metrics_updater, daemon=True).start()

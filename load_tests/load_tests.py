@@ -4,6 +4,9 @@ from locust import HttpUser, task, between
 class LoadBalancerUser(HttpUser):
     wait_time = between(1, 3)  # Simulate user think time between requests (1 to 3 seconds)
 
+    def on_start(self):
+        self.client.verify = False  # Disable SSL cert verification
+
     # List of load balancing algorithms to test
     algorithms = ['least_connections', 'ip_hash', 'round_robin', 'weighted_round_robin', 'power_of_two', 'geo_aware', 'adaptive']
 
@@ -30,11 +33,6 @@ class LoadBalancerUser(HttpUser):
     @task(1)
     def test_power_of_two(self):
         algo = 'power_of_two'
-        self.client.get(f'/?algo={algo}')
-
-    @task(1)
-    def test_geo_aware(self):
-        algo = 'geo_aware'
         self.client.get(f'/?algo={algo}')
 
     @task(1)
