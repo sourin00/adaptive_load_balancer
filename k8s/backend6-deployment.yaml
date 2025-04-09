@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: backend6
-          image: us-central1-docker.pkg.dev/adaptive-load-balancer-1/backend-services/backend6:latest
+          image: us-central1-docker.pkg.dev/adaptive-load-balancer-2/backend-services/backend6:latest
           ports:
             - containerPort: 5000
 ---

@@ -33,17 +33,17 @@ ALGO_REQUEST_COUNT = Counter('load_balancer_algo_requests_total', 'Requests per 
 
 # Server pool
 servers = [
-    {'name': 'backend1', 'url': "http://34.142.176.64", 'weight': 2, 'connections': 0, 'response_time': 0.05,
+    {'name': 'backend1', 'url': "http://35.247.149.238", 'weight': 2, 'connections': 0, 'response_time': 0.05,
      'region': 'APAC'},
-    {'name': 'backend2', 'url': "http://34.140.174.234", 'weight': 3, 'connections': 0, 'response_time': 0.04,
+    {'name': 'backend2', 'url': "http://35.189.194.133", 'weight': 3, 'connections': 0, 'response_time': 0.04,
      'region': 'EU'},
-    {'name': 'backend3', 'url': "http://34.173.210.96", 'weight': 1, 'connections': 0, 'response_time': 0.06,
+    {'name': 'backend3', 'url': "http://34.29.183.197", 'weight': 1, 'connections': 0, 'response_time': 0.06,
      'region': 'US'},
-    {'name': 'backend4', 'url': "http://35.198.195.167", 'weight': 3, 'connections': 0, 'response_time': 0.02,
+    {'name': 'backend4', 'url': "http://34.143.191.235", 'weight': 3, 'connections': 0, 'response_time': 0.02,
      'region': 'APAC'},
-    {'name': 'backend5', 'url': "http://34.140.55.130", 'weight': 4, 'connections': 0, 'response_time': 0.01,
+    {'name': 'backend5', 'url': "http://34.79.223.176", 'weight': 4, 'connections': 0, 'response_time': 0.01,
      'region': 'EU'},
-    {'name': 'backend6', 'url': "http://34.123.160.24", 'weight': 2, 'connections': 0, 'response_time': 0.04,
+    {'name': 'backend6', 'url': "http://35.193.236.33", 'weight': 2, 'connections': 0, 'response_time': 0.04,
      'region': 'US'}
 ]
 
@@ -56,7 +56,8 @@ def load_balancer():
     REQUEST_COUNT.inc()
 
     algo = request.args.get('algo')
-    redis_client.set("last_used_algo", algo)
+    if not algo:
+        algo = "adaptive"
 
     # Reset index for round-robin family if algo changes
     prev_algo = redis_client.get("last_used_algo")
@@ -95,6 +96,9 @@ def load_balancer():
 def metrics():
     return generate_latest()
 
+@app.route('/health')
+def health():
+    return "OK", 200
 
 # Redis-based round-robin
 def get_server_round_robin():
@@ -195,7 +199,7 @@ def update_server_metrics_using_api():
             update_server_effective_weight(server_info)
         except requests.exceptions.RequestException as e:
             print(f"Error fetching metrics for {server_info['server']}: {e}")
-    print("🔄 Updated Server Metrics using api:")
+    print("Updated Server Metrics using api:")
     pp.pprint(servers)
 
 
@@ -207,7 +211,7 @@ def calculate_cpu_percent(stats):
         if system_delta > 0 and cpu_delta > 0:
             return (cpu_delta / system_delta) * cpu_count * 100.0
     except Exception as e:
-        print("❌ Error calculating CPU:", e)
+        print("Error calculating CPU:", e)
     return 0.0
 
 
@@ -226,13 +230,13 @@ def update_server_metrics_using_docker_sdk():
                 s['cpu'] = round(cpu, 2)
                 s['mem'] = mem
             except Exception as e:
-                print(f"❌ Error getting stats for {s['name']}: {e}")
+                print(f"Error getting stats for {s['name']}: {e}")
 
-        print("🔄 Updated Server Metrics using docker SDK:")
+        print("Updated Server Metrics using docker SDK:")
         pp.pprint(servers)
 
     except Exception as e:
-        print("❌ Top-level updater error:", e)
+        print("Top-level updater error:", e)
 
 
 def background_metrics_updater(interval=5):
@@ -309,7 +313,7 @@ def select_server(algo, client_ip):
         elif algo == 'power_of_two':
             return power_of_two_choice()
     except Exception as e:
-        print(f"❌ Error selecting server using {algo}: {e}")
+        print(f"Error selecting server using {algo}: {e}")
         return None
 
 

@@ -1,7 +1,7 @@
 variable "project_id" {
   description = "GCP project ID"
   type        = string
-  default     = "adaptive-load-balancer-1"
+  default     = "adaptive-load-balancer-2"
 }
 
 variable "default_region" {

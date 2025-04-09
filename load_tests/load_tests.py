@@ -8,7 +8,7 @@ class LoadBalancerUser(HttpUser):
         self.client.verify = False  # Disable SSL cert verification
 
     # List of load balancing algorithms to test
-    algorithms = ['least_connections', 'ip_hash', 'round_robin', 'weighted_round_robin', 'power_of_two', 'geo_aware', 'adaptive']
+    algorithms = ['least_connections', 'ip_hash', 'round_robin', 'weighted_round_robin', 'power_of_two', 'adaptive']
 
     @task(1)  # Equal weight for all algorithms, so each runs equally
     def test_round_robin(self):
