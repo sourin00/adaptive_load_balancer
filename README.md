@@ -28,7 +28,6 @@ This project implements an adaptive load balancer using various techniques, depl
     * GCP startup script for deploying the load balancer and Redis on a VM.
 
 ## Technologies Used
-
 * Python (Flask, requests, psutil, prometheus_client, prometheus_api_client, docker, geoip2)
 * Docker & Docker Compose
 * Kubernetes
@@ -75,7 +74,6 @@ This project implements an adaptive load balancer using various techniques, depl
     * `http://localhost:5000/?algo=adaptive` (Default)
 
 ### Monitoring
-
 * **Grafana:** Access `http://localhost:3000`. Pre-configured dashboards for the load balancer, cAdvisor, Node Exporter, and Locust should be available.
 * **Prometheus:** Access `http://localhost:9090` to query metrics directly.
 
@@ -91,7 +89,7 @@ This project implements an adaptive load balancer using various techniques, depl
 
 The `k8s/` directory contains sample deployment and service files for the backend services.
 
-1.  Ensure your `kubectl` is configured for your cluster.
+1.  Ensure `kubectl` is configured for the cluster.
 2.  Apply the deployment files:
     ```bash
     kubectl apply -f k8s/
@@ -101,7 +99,6 @@ The `k8s/` directory contains sample deployment and service files for the backen
 ### GCP VM Deployment (Load Balancer + Redis)
 
 The `load-balancer/deployment/startup-script.sh` provides a basic setup for running the load balancer and Redis on a Google Cloud VM.
-
 1.  Create a GCP VM instance.
 2.  Use the content of `startup-script.sh` as the startup script for the VM.
 3.  Ensure the VM has Docker installed or the script handles the installation.
