@@ -2,6 +2,10 @@
 
 This project implements an adaptive load balancer using various techniques, deployed with Docker Compose and Kubernetes options. It includes multiple backend services, monitoring with Prometheus and Grafana, and load testing capabilities with Locust.
 
+## [Analysis & Report](https://docs.google.com/document/d/1s8nmngo9ZfweRxMrhI0Ae6KxDvxAJozVhTq9u6ELx6w/edit?usp=sharing)
+
+
+
 ## Features
 
 * **Multiple Load Balancing Algorithms:** Supports various algorithms including:
